@@ -16,10 +16,7 @@ def sigmoid(x):
     s -- sigmoid(x)
     """
 
-    ### YOUR CODE HERE (~1 Line)
-
-    ### END YOUR CODE
-
+    s = 1 / (1 + np.exp(-x))
     return s
 
 
@@ -36,7 +33,7 @@ def naiveSoftmaxLossAndGradient(
     for our word2vec models.
 
     Arguments:
-    centerWordVec -- numpy ndarray, center word's embedding
+    centerWordVec -- numpy ndarray, center word's embedding #
                     in shape (word vector length, )
                     (v_c in the pdf handout)
     outsideWordIdx -- integer, the index of the outside word
@@ -56,7 +53,25 @@ def naiveSoftmaxLossAndGradient(
                     (dJ / dU)
     """
 
-    ### YOUR CODE HERE (~6-8 Lines)
+    # centerWordVec  1,D
+    # outsideWordIdx  int
+    # outsideVectors V,D
+
+    # gradCenterVec  1,D
+    # gradOutsideVecs  V,D
+
+
+    normed = normalizeRows(outsideVectors.dot(centerWordVec.T))
+    smax_scores = softmax(normed)
+    loss = -np.log(smax_scores[outsideWordIdx]) # V, 1 
+
+    
+    smax_scores[outsideWordIdx] = smax_scores[outsideWordIdx] - 1
+    # 1, d = (V, 1) T * V, d
+    gradCenterVec = smax_scores.T.dot(outsideVectors)
+    # V, d = V, 1 * 1, d
+    gradOutsideVecs = smax_scores.dot(centerWordVec)
+
 
     ### Please use the provided softmax function (imported earlier in this file)
     ### This numerically stable implementation helps you avoid issues pertaining
@@ -66,10 +81,11 @@ def naiveSoftmaxLossAndGradient(
 
     return loss, gradCenterVec, gradOutsideVecs
 
-
+# get words that doesn't exist in the window
 def getNegativeSamples(outsideWordIdx, dataset, K):
     """ Samples K indexes which are not the outsideWordIdx """
 
+    # None K개를 갖는 list
     negSampleWordIndices = [None] * K
     for k in range(K):
         newidx = dataset.sampleTokenIdx()
@@ -94,22 +110,39 @@ def negSamplingLossAndGradient(
 
     Note: The same word may be negatively sampled multiple times. For
     example if an outside word is sampled twice, you shall have to
-    double count the gradient with respect to this word. Thrice if
+    double count the gradient with respect to this word. Thrice if # 이 부분이 좀 어렵네....
     it was sampled three times, and so forth.
 
     Arguments/Return Specifications: same as naiveSoftmaxLossAndGradient
     """
+    gradCenterVec = np.zeros(centerWordVec.shape)
+    gradOutsideVecs = np.zeros(outsideVectors.shape)
 
-    # Negative sampling of words is done for you. Do not modify this if you
-    # wish to match the autograder and receive points!
-    negSampleWordIndices = getNegativeSamples(outsideWordIdx, dataset, K)
-    indices = [outsideWordIdx] + negSampleWordIndices
+    negSampleWordIndices  = getNegativeSamples(outsideWordIdx, dataset, K)
+    indices = [outsideWordIdx] + negSampleWordIndices #list 끼리 덧셈 쌉가능
 
-    ### YOUR CODE HERE (~10 Lines)
+    loss = 0.0
+    scores = outsideVectors[outsideWordIdx].dot(centerWordVec.T)
+    z1 = sigmoid(scores)
+    loss = -np.log(z1)
+    
+    # 전체 곱하고 o 고르는 것과 전체에서 o를 골라서 곱하는 것. 당연히 후자가 더 낫다. 왜 생각못했지??? 
+    # 는 수식에따른 자연스러운 접근방식이다. 
+    # 1) 1st loss : outside words
+    # 위에서 먼저 outside vec에대해 인덱싱 해줬으므로, 그대로 연산하면 gradCenterVec은 인덱싱된 행렬을 바탕으로 구해짐.
+    # 1, d = 1, 4 X 4, d
+    gradCenterVec += (z1 - 1).T.dot(outsideVectors[outsideWordIdx])
+    # 4, d = 4 1 1 d 
+    gradOutsideVecs[outsideVectors] += (z1 - 1).dot(centerWordVec)
 
-    ### Please use your implementation of sigmoid in here.
 
-    ### END YOUR CODE
+    # 2) 2nd loss : negative sampling
+    neg_scores = outsideVectors[negSampleWordIndices].dot(centerWordVec.T) # k, 1 = k, d x d, 1
+    z2 = sigmoid(neg_scores)
+    loss -= np.sum(np.log(-z2))
+
+    gradCenterVec +=  (z2 - 1).T.dot(outsideVectors[negSampleWordIndices])*(-1)
+    gradOutsideVecs[negSampleWordIndices] += (z2 - 1).dot(centerWordVec) #이거 왜 외적 ?
 
     return loss, gradCenterVec, gradOutsideVecs
 
@@ -123,7 +156,7 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
 
     Arguments:
     currentCenterWord -- a string of the current center word
-    windowSize -- integer, context window size
+    windowSize -- integer, contextcontext window size
     outsideWords -- list of no more than 2*windowSize strings, the outside words
     word2Ind -- a dictionary that maps words to their indices in
               the word vector list
@@ -148,10 +181,24 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
                     in shape (num words in vocab, word vector length) 
                     (dJ / dU)
     """
+    V, D = centerWordVectors.shape
 
     loss = 0.0
-    gradCenterVecs = np.zeros(centerWordVectors.shape)
-    gradOutsideVectors = np.zeros(outsideVectors.shape)
+    gradCenterVecs = np.zeros(centerWordVectors.shape) # V, d
+    gradOutsideVectors = np.zeros(outsideVectors.shape) # V, d
+
+
+        
+    vc_location = word2Ind[currentCenterWord]
+
+    outside_words = outsideVectors[np.max(vc_location - windowSize,0) : np.min(vc_location + windowSize, V), :]
+    np.argsort(outside_words) 
+
+
+    for i in range(windowSize*2):
+        word2vecLossAndGradient(currentCenterWord, outside_words[i], outsideVectors, dataset)
+    dot_prod_mat = normalizeRows(centerWordVectors.dot(outsideVectors.T))
+    dot_prod_mat[]
 
     ### YOUR CODE HERE (~8 Lines)
 
