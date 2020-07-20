@@ -15,7 +15,7 @@ def sigmoid(x):
     Return:
     s -- sigmoid(x)
     """
-
+    ddasdf
     s = 1 / (1 + np.exp(-x))
     return s
 
