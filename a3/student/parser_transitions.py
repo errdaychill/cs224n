@@ -50,13 +50,11 @@ class PartialParse(object):
             word = self.buffer.pop(0)
             self.stack.append(word)
         elif transition == "LA":
-            dependent = self.stack.pop(-2)
-            head = self.stack[-1]
-            self.dependencies.append((head,dependent))
+            self.dependencies.append((self.stack[-1],self.stack[-2]))
+            self.stack.pop(-2)
         elif transition == "RA":
-            dependent = self.stack.pop()
-            head = self.stack[-1]
-            self.dependencies.append((head,dependent))
+            self.dependencies.append((self.stack[-2],self.stack[-1]))
+            self.stack.pop()
         ###
         ###     Implement a single parsing step, i.e. the logic for the following as
         ###     described in the pdf handout:

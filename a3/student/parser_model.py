@@ -48,14 +48,24 @@ class ParserModel(nn.Module):
         self.hidden_size = hidden_size
         self.embeddings = nn.Parameter(torch.tensor(embeddings))
         
-        self.embed_to_hidden_weight = nn.Parameter(nn.init.xavier_uniform_(n_features, hidden_size))
-        self.embed_to_hidden_bias = nn.Parameter(nn.init.uniform_(hidden_size))    
-        self.droput = nn.Dropout()
-        self.hidden_to_logits_weight = nn.Parameter(nn.init.xavier_uniform_(hidden_size, n_classes))
-        self.hidden_to_logits_bias = nn.Parameter(nn.init.uniform_(n_classes))
 
-        ### YOUR CODE HERE (~10 Lines)
+        
+        
+                ### YOUR CODE HERE (~10 Lines)
         ### TODO:
+
+        self.w1 = nn.Parameter(torch.empty(self.n_features * self.embed_size, self.hidden_size))
+        self.embed_to_hidden_weight = nn.init.xavier_uniform_(self.w1)
+        self.b1 = nn.Parameter(torch.empty(self.hidden_size))
+        self.embed_to_hidden_bias = nn.init.uniform_(self.b1)
+
+        self.dropout = nn.Dropout()
+        
+        self.w2 = nn.Parameter(torch.empty(self.hidden_size, self.n_classes))
+        self.embed_to_logits_weight = nn.init.xavier_uniform_(self.w2)
+        self.b2 = nn.Parameter(torch.empty(self.n_classes))
+        self.embed_to_logits_bias = nn.init.uniform_(self.b2)
+
         ###     1) Declare `self.embed_to_hidden_weight` and `self.embed_to_hidden_bias` as `nn.Parameter`.
         ###        Initialize weight with the `nn.init.xavier_uniform_` function and bias with `nn.init.uniform_`
         ###        with default parameters.
@@ -90,6 +100,7 @@ class ParserModel(nn.Module):
                                 (batch_size, n_features * embed_size)
         """
 
+        x = torch.gather(self.embeddings, 1, w)
         ### YOUR CODE HERE (~1-3 Lines)
         ### TODO:
         ###     1) For each index `i` in `w`, select `i`th vector from self.embeddings
@@ -135,6 +146,16 @@ class ParserModel(nn.Module):
         @return logits (Tensor): tensor of predictions (output after applying the layers of the network)
                                  without applying softmax (batch_size, n_classes)
         """
+        
+        get_embeddings = self.embedding_lookup(w)
+        affine = torch.matmul(get_embeddings, self.embed_to_hidden_weight) #get_embeddings.dot(self.embed_to_hidden_weight) + self.embed_to_hidden_bias
+        # affine = get_embeddings.dot(self.embed_to_hidden_weight) + self.embed_to_hidden_bias
+        h_layer = F.relu(affine)
+        affine2 = torch.matmul(h_layer, self.embed_to_logits_weight)
+        # affine2 = h_layer.dot(self.embed_to_logits_weight) + self.embed_to_logits_bias
+        logits = F.relu(affine2)
+        logits = self.dropout(logits)
+
         ### YOUR CODE HERE (~3-5 lines)
         ### TODO:
         ###     Complete the forward computation as described in write-up. In addition, include a dropout layer

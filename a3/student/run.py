@@ -40,7 +40,9 @@ def train(parser, train_data, dev_data, output_path, batch_size=1024, n_epochs=1
     """
     best_dev_UAS = 0
 
-
+    optimizer =optim.Adam(parser.model.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False)
+    loss_func = nn.CrossEntropyLoss()
+        
     ### YOUR CODE HERE (~2-7 lines)
     ### TODO:
     ###      1) Construct Adam Optimizer in variable `optimizer`
@@ -94,6 +96,11 @@ def train_for_epoch(parser, train_data, dev_data, optimizer, loss_func, batch_si
             train_x = torch.from_numpy(train_x).long()
             train_y = torch.from_numpy(train_y.nonzero()[1]).long()
 
+            y_hat = model(train_x)
+            loss = loss_func(y_hat, train_y)
+            loss.backward()
+            optimizer.step()
+
             ### YOUR CODE HERE (~5-10 lines)
             ### TODO:
             ###      1) Run train_x forward through model to produce `logits`
@@ -123,7 +130,7 @@ def train_for_epoch(parser, train_data, dev_data, optimizer, loss_func, batch_si
 
 
 if __name__ == "__main__":
-    debug = args.debug
+    debug = True
 
     assert (torch.__version__.split(".") >= ["1", "0", "0"]), "Please install torch version >= 1.0.0"
 
