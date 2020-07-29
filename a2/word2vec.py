@@ -54,23 +54,33 @@ def naiveSoftmaxLossAndGradient(
     """
 
     # centerWordVec  1,D
+    # gradCenterVec  1,D
     # outsideWordIdx  int
     # outsideVectors V,D
-
-    # gradCenterVec  1,D
     # gradOutsideVecs  V,D
 
+    # 새로 배운 것들
+    # (V, ) = (V x d) (d, ) 
+    # (K X 1) * (K X m) = (K X m) 
+    # matrix[row].shape is 1D : 하나만 부를 시 무조건 1D
 
-    normed = normalizeRows(outsideVectors.dot(centerWordVec.T))
-    smax_scores = softmax(normed)
-    loss = -np.log(smax_scores[outsideWordIdx]) # V, 1 
-
+    # V X 1 = (V x d) (d x 1)
+    normed = normalizeRows(outsideVectors.dot(centerWordVec.reshape(-1,1)))
+    y_hat = softmax(normed)
+    loss = -np.log(y_hat[outsideWordIdx]) 
+   
+    # V X 1 
+    # dL/da . 
+    # u_w == u_o : (a - 1) 
+    # u_w != u_o : a
+    y_hat[outsideWordIdx] -= 1
     
-    smax_scores[outsideWordIdx] = smax_scores[outsideWordIdx] - 1
-    # 1, d = (V, 1) T * V, d
-    gradCenterVec = smax_scores.T.dot(outsideVectors)
+    # 1 X d = (V X 1).T (V X d)
+    # (yhat - y).T * U
+    gradCenterVec = y_hat.T.dot(outsideVectors).flatten()
     # V, d = V, 1 * 1, d
-    gradOutsideVecs = smax_scores.dot(centerWordVec)
+    # (yhat - y) * vc.T
+    gradOutsideVecs = y_hat.dot(centerWordVec.reshape(1,-1))
 
 
     ### Please use the provided softmax function (imported earlier in this file)
@@ -111,39 +121,39 @@ def negSamplingLossAndGradient(
     Note: The same word may be negatively sampled multiple times. For
     example if an outside word is sampled twice, you shall have to
     double count the gradient with respect to this word. Thrice if # 이 부분이 좀 어렵네....
-    it was sampled three times, and so forth.
+    it was samspled three times, and so forth.
 
     Arguments/Return Specifications: same as naiveSoftmaxLossAndGradient
-    """
+    """ 
     gradCenterVec = np.zeros(centerWordVec.shape)
     gradOutsideVecs = np.zeros(outsideVectors.shape)
 
     negSampleWordIndices  = getNegativeSamples(outsideWordIdx, dataset, K)
-    indices = [outsideWordIdx] + negSampleWordIndices #list 끼리 덧셈 쌉가능
+    indices = [outsideWordIdx] + negSampleWordIndices 
 
     loss = 0.0
-    scores = outsideVectors[outsideWordIdx].dot(centerWordVec.T)
-    z1 = sigmoid(scores)
-    loss = -np.log(z1)
+
     
-    # 전체 곱하고 o 고르는 것과 전체에서 o를 골라서 곱하는 것. 당연히 후자가 더 낫다. 왜 생각못했지??? 
-    # 는 수식에따른 자연스러운 접근방식이다. 
-    # 1) 1st loss : outside words
-    # 위에서 먼저 outside vec에대해 인덱싱 해줬으므로, 그대로 연산하면 gradCenterVec은 인덱싱된 행렬을 바탕으로 구해짐.
-    # 1, d = 1, 4 X 4, d
-    gradCenterVec += (z1 - 1).T.dot(outsideVectors[outsideWordIdx])
-    # 4, d = 4 1 1 d 
-    gradOutsideVecs[outsideVectors] += (z1 - 1).dot(centerWordVec)
+    scores = outsideVectors.dot(centerWordVec.reshape(-1,1))
 
+    # V X 1 
+    z1 = sigmoid(scores)
+    z2 = sigmoid(-scores)
+    # scalar
+    p_outside = z1[outsideWordIdx]
+    # (K, d)
+    p_negatives = z2[negSampleWordIndices] 
 
-    # 2) 2nd loss : negative sampling
-    neg_scores = outsideVectors[negSampleWordIndices].dot(centerWordVec.T) # k, 1 = k, d x d, 1
-    z2 = sigmoid(neg_scores)
-    loss -= np.sum(np.log(-z2))
+    loss = -np.log(p_outside) - np.sum(np.log(p_negatives))
 
-    gradCenterVec +=  (z2 - 1).T.dot(outsideVectors[negSampleWordIndices])*(-1)
-    gradOutsideVecs[negSampleWordIndices] += (z2 - 1).dot(centerWordVec) #이거 왜 외적 ?
-
+    # dJ / dv_c
+    gradCenterVec += (p_outside -1) * outsideVectors[outsideWordIdx] + np.sum((1 - p_negatives) * outsideVectors[negSampleWordIndices])
+    # dJ / du_o 
+    gradOutsideVecs[outsideWordIdx] += z1[outsideWordIdx] * centerWordVec
+    # dJ / du_k 
+    for i, n_idx in enumerate(negSampleWordIndices):
+        gradOutsideVecs[n_idx] += (1 - p_negatives[i]) * centerWordVec
+        # gradOutsideVecs[n_idx] += np.sum((1 - p_negatives).dot(centerWordVec(1,-1))) 
     return loss, gradCenterVec, gradOutsideVecs
 
 
@@ -181,30 +191,38 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
                     in shape (num words in vocab, word vector length) 
                     (dJ / dU)
     """
-    V, D = centerWordVectors.shape
+    _, D = centerWordVectors.shape
 
     loss = 0.0
-    gradCenterVecs = np.zeros(centerWordVectors.shape) # V, d
+    gradCenterVec = np.zeros(D) # 1, d
     gradOutsideVectors = np.zeros(outsideVectors.shape) # V, d
 
+    center_idx = word2Ind[currentCenterWord]
+    v_c = centerWordVectors[center_idx]
+    outside_indices = [word2Ind[o_word] for o_word in outsideWords]
 
+    # scores = outsideVectors.dot(v_c.T)
+    # window = outsideVectors[np.max(center_idx - windowSize,0) : np.min(center_idx + windowSize, V),:]
+
+
+    for o_idx in outside_indices:
+        l, gradC, gradO = word2vecLossAndGradient(v_c, o_idx, outsideVectors, dataset)
+        loss += l
+        gradCenterVec += gradC
+        gradOutsideVectors += gradO
         
-    vc_location = word2Ind[currentCenterWord]
 
-    outside_words = outsideVectors[np.max(vc_location - windowSize,0) : np.min(vc_location + windowSize, V), :]
-    np.argsort(outside_words) 
+    # for i in range(windowSize*2):
+    #     if window[i] == currentCenterWord:
+    #         continue; 
+    #     l, gradC, gradO = word2vecLossAndGradient(currentCenterWord, window[i], outsideVectors, dataset)
+    #     loss += l
+    #     gradCentervec += gradC
+    #     gradOutsideVectors += gradO
 
 
-    for i in range(windowSize*2):
-        word2vecLossAndGradient(currentCenterWord, outside_words[i], outsideVectors, dataset)
-    dot_prod_mat = normalizeRows(centerWordVectors.dot(outsideVectors.T))
-    dot_prod_mat[]
-
-    ### YOUR CODE HERE (~8 Lines)
-
-    ### END YOUR CODE
-    
-    return loss, gradCenterVecs, gradOutsideVectors
+ 
+    return loss, gradCenterVec, gradOutsideVectors
 
 
 #############################################

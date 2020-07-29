@@ -6,9 +6,9 @@ parser_transitions.py: Algorithms for completing partial parsess.
 Sahil Chopra <schopra8@stanford.edu>
 Haoshen Hong <haoshen@stanford.edu>
 """
-
+import copy
 import sys
-
+import numpy as np
 class PartialParse(object):
     def __init__(self, sentence):
         """Initializes this partial parse.
@@ -18,7 +18,9 @@ class PartialParse(object):
         """
         # The sentence being parsed is kept for bookkeeping purposes. Do not alter it in your code.
         self.sentence = sentence
-
+        self.stack = ["ROOT"]
+        self.buffer = sentence[:]
+        self.dependencies = []
         ### YOUR CODE HERE (3 Lines)
         ### Your code should initialize the following fields:
         ###     self.stack: The current stack represented as a list with the top of the stack as the
@@ -44,7 +46,16 @@ class PartialParse(object):
                                 transition is a legal transition.
         """
         ### YOUR CODE HERE (~7-10 Lines)
-        ### TODO:
+        if transition == "S" and len(self.buffer) > 0:
+            word = self.buffer.pop(0)
+            self.stack.append(word)
+        elif transition == "LA":
+            self.dependencies.append((self.stack[-1],self.stack[-2]))
+            self.stack.pop(-2)
+        elif transition == "RA":
+            self.dependencies.append((self.stack[-2],self.stack[-1]))
+            self.stack.pop()
+        ###
         ###     Implement a single parsing step, i.e. the logic for the following as
         ###     described in the pdf handout:
         ###         1. Shift
@@ -77,7 +88,7 @@ def minibatch_parse(sentences, model, batch_size):
                                 model.predict(partial_parses) that takes in a list of PartialParses as input and
                                 returns a list of transitions predicted for each parse. That is, after calling
                                     transitions = model.predict(partial_parses)
-                                transitions[i] will be the next transition to apply to partial_parses[i].
+                                
     @param batch_size (int): The number of PartialParses to include in each minibatch
 
 
@@ -86,7 +97,10 @@ def minibatch_parse(sentences, model, batch_size):
                                                     same as in sentences (i.e., dependencies[i] should
                                                     contain the parse for sentences[i]).
     """
-    dependencies = []
+   
+
+        
+
 
     ### YOUR CODE HERE (~8-10 Lines)
     ### TODO:
@@ -100,9 +114,23 @@ def minibatch_parse(sentences, model, batch_size):
     ###             In our case, `partial_parses` contains a list of partial parses. `unfinished_parses`
     ###             contains references to the same objects. Thus, you should NOT use the `del` operator
     ###             to remove objects from the `unfinished_parses` list. This will free the underlying memory that
-    ###             is being accessed by `partial_parses` and may cause your code to crash.
+    # ###             is being accessed by `partial_parses` and may cause your code to crash.
+    dependencies = []
+    partial_parses = [PartialParse(sentence) for sentence in sentences] #4개
+    unfinished_parses = partial_parses[:]
+
+    # transitions = model.predict(partial_parses)
+    while len(unfinished_parses):
+        minibatch = unfinished_parses[:batch_size]
+        pred_trans = model.predict(minibatch)
+        # pred_trans[i] = i번째 문장의 예측된 transitions
+        for idx, p in enumerate(minibatch):
+            p.parse_step(pred_trans[idx])
+            if len(p.buffer) == 0 and len(p.stack) == 1:
+                unfinished_parses.remove(p)
 
 
+    dependencies = [p.dependencies for p in partial_parses]
     ### END YOUR CODE
 
     return dependencies
