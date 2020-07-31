@@ -130,7 +130,7 @@ def train_for_epoch(parser, train_data, dev_data, optimizer, loss_func, batch_si
 
 
 if __name__ == "__main__":
-    debug = True
+    debug = False
 
     assert (torch.__version__.split(".") >= ["1", "0", "0"]), "Please install torch version >= 1.0.0"
 

@@ -100,7 +100,9 @@ class ParserModel(nn.Module):
                                 (batch_size, n_features * embed_size)
         """
 
-        x = torch.gather(self.embeddings, 1, w)
+        selection = torch.index_select(self.embeddings, 0, w.view(-1))
+        x = selection.view(w.size()[0],-1)
+
         ### YOUR CODE HERE (~1-3 Lines)
         ### TODO:
         ###     1) For each index `i` in `w`, select `i`th vector from self.embeddings

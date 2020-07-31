@@ -46,6 +46,7 @@ class PartialParse(object):
                                 transition is a legal transition.
         """
         ### YOUR CODE HERE (~7-10 Lines)
+        
         if transition == "S" and len(self.buffer) > 0:
             word = self.buffer.pop(0)
             self.stack.append(word)
@@ -123,7 +124,6 @@ def minibatch_parse(sentences, model, batch_size):
     while len(unfinished_parses):
         minibatch = unfinished_parses[:batch_size]
         pred_trans = model.predict(minibatch)
-        # pred_trans[i] = i번째 문장의 예측된 transitions
         for idx, p in enumerate(minibatch):
             p.parse_step(pred_trans[idx])
             if len(p.buffer) == 0 and len(p.stack) == 1:
