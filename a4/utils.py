@@ -33,7 +33,7 @@ def pad_sents(sents, pad_token):
     sents_padded = []
 
     max_length = max(map(len, sents))    
-    sents_padded = [(sent + [pad_token] * (max_length - len(sent))) if len(sent) is not max_length for sent in sents]
+    sents_padded = [(sent + [pad_token] * (max_length - len(sent))) for sent in sents]
     return sents_padded
 
 

@@ -34,23 +34,15 @@ class NMT(nn.Module):
         @param hidden_size (int): Hidden Size, the size of hidden states (dimensionality)
         @param vocab (Vocab): Vocabulary object containing src and tgt languages
                               See vocab.py for documentation.
-        @param dropout_rate (float): Dropout probability, for attention
+        @param dropout_rate (float): Dropout probability, for attentionze, bias=T
         """
         super(NMT, self).__init__()
         self.model_embeddings = ModelEmbeddings(embed_size, vocab)
         self.hidden_size = hidden_size
         self.dropout_rate = dropout_rate
         self.vocab = vocab
-
         # default values
-        self.encoder = None 
-        self.decoder = None
-        self.h_projection = None
-        self.c_projection = None
-        self.att_projection = None
-        self.combined_output_projection = None
-        self.target_vocab_projection = None
-        self.dropout = None
+        
         # For sanity check only, not relevant to implementation
         self.gen_sanity_check = False
         self.counter = 0
@@ -58,6 +50,16 @@ class NMT(nn.Module):
 
         ### YOUR CODE HERE (~8 Lines)
         ### TODO - Initialize the following variables:
+        self.encoder = nn.LSTM(embed_size, hidden_size, bias=True, bidirectional=True) 
+        self.decoder = nn.LSTMCell(embed_size + hidden_size, hidden_size)
+        self.h_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
+        self.c_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
+        self.att_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
+        self.combined_output_projection = nn.Linear(3*hidden_size, hidden_size, bias=False)
+        self.target_vocab_projection = nn.Linear(hidden_size, len(vocab.tgt), bias=False)
+        self.dropout = nn.Dropout()
+    
+    
         ###     self.encoder (Bidirectional LSTM with bias)
         ###     self.decoder (LSTM Cell with bias)
         ###     self.h_projection (Linear Layer with no bias), called W_{h} in the PDF.
@@ -136,8 +138,29 @@ class NMT(nn.Module):
         """
         enc_hiddens, dec_init_state = None, None
 
-        ### YOUR CODE HERE (~ 8 Lines)
-        ### TODO:
+
+        # constructing X
+        # X : (src_len x batch_size)
+        # I understand intuitively, but don't know the exact shape of X
+        # pack_padded_sequence : (batch_sum_len x embed_dim)
+        X = self.model_embeddings.source(source_padded)
+        X = pack_padded_sequence(X, source_lengths)
+
+        # output.size : (src_len x b x h*2)
+        # last_end_hidden : (2 x b x h)
+        # last_enc_cell : (2 x b x h)
+        output, (last_enc_h, last_enc_c) = self.encoder(X)
+
+        # shape 바꾸기 : torch.permute
+        # padded indices will be 0
+        # pad_packed_sequence : Inverse of pack_padded_sequence
+        enc_hiddens, _ = pad_packed_sequence(output)
+        enc_hiddens = enc_hiddens.permute(1,0,2)
+        # making decoder initial state
+        init_decoder_hidden = self.h_projection(torch.cat((last_enc_h[0,:,:], last_enc_h[1,:,:]), dim=1))
+        init_decoder_cell = self.c_projection(torch.cat((last_enc_c[0,:,:], last_enc_c[1,:,:]), dim=1))
+        dec_init_state = (init_decoder_hidden, init_decoder_cell)
+
         ###     1. Construct Tensor `X` of source sentences with shape (src_len, b, e) using the source model embeddings.
         ###         src_len = maximum source sentence length, b = batch size, e = embedding size. Note
         ###         that there is no initial hidden state or cell for the decoder.
@@ -169,9 +192,6 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/tensors.html#torch.Tensor.permute
 
 
-
-
-        ### END YOUR CODE
 
         return enc_hiddens, dec_init_state
 
