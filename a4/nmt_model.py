@@ -57,8 +57,8 @@ class NMT(nn.Module):
         self.att_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
         self.combined_output_projection = nn.Linear(3*hidden_size, hidden_size, bias=False)
         self.target_vocab_projection = nn.Linear(hidden_size, len(vocab.tgt), bias=False)
-        self.dropout = nn.Dropout()
-    
+        self.dropout = nn.Dropout(dropout_rate)
+        
     
         ###     self.encoder (Bidirectional LSTM with bias)
         ###     self.decoder (LSTM Cell with bias)
@@ -151,11 +151,11 @@ class NMT(nn.Module):
         # last_enc_cell : (2 x b x h)
         output, (last_enc_h, last_enc_c) = self.encoder(X)
 
-        # shape 바꾸기 : torch.permute
-        # padded indices will be 0
+        # np.reshape == torch.permute
         # pad_packed_sequence : Inverse of pack_padded_sequence
         enc_hiddens, _ = pad_packed_sequence(output)
         enc_hiddens = enc_hiddens.permute(1,0,2)
+        
         # making decoder initial state
         init_decoder_hidden = self.h_projection(torch.cat((last_enc_h[0,:,:], last_enc_h[1,:,:]), dim=1))
         init_decoder_cell = self.c_projection(torch.cat((last_enc_c[0,:,:], last_enc_c[1,:,:]), dim=1))
@@ -224,8 +224,35 @@ class NMT(nn.Module):
         # Initialize a list we will use to collect the combined output o_t on each step
         combined_outputs = []
 
+        
+
+
+
         ### YOUR CODE HERE (~9 Lines)
-        ### TODO:
+        ### TODO: 
+
+        # 1. 
+        # 2h to h
+        enc_hiddens_proj = self.att_projection(enc_hiddens)
+
+        # 2.
+        # Y : (tgt_len x b x e)
+        Y = self.model_embeddings.target(target_padded)
+
+        # 3. 
+        o_t_list = []
+        for Y_t in Y.split(1,dim=0):
+            Y_t = Y_t.squeeze() # b x e 
+            Ybar_t = torch.cat((o_prev, Y_t), dim=1) # b x (e + h)
+            dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
+            o_prev = o_t
+            o_t_list.append(o_t)
+
+        # 4. 
+        # o_t = (b, h)
+        # stack시 dim이 추가되므로, 언스퀴즈하면 dim이 총 두 개 추가되는 것.
+        combined_outputs = torch.stack(o_t_list, dim=0)
+
         ###     1. Apply the attention projection layer to `enc_hiddens` to obtain `enc_hiddens_proj`,
         ###         which should be shape (b, src_len, h),
         ###         where b = batch size, src_len = maximum source length, h = hidden size.
@@ -283,8 +310,11 @@ class NMT(nn.Module):
                 First tensor is decoder's prev hidden state, second tensor is decoder's prev cell.
         @param enc_hiddens (Tensor): Encoder hidden states Tensor, with shape (b, src_len, h * 2), where b = batch size,
                                     src_len = maximum source length, h = hidden size.
+
+        # 애 왜 필요??
         @param enc_hiddens_proj (Tensor): Encoder hidden states Tensor, projected from (h * 2) to h. Tensor is with shape (b, src_len, h),
-                                    where b = batch size, src_len = maximum source length, h = hidden size.
+                                    where b = batch size, src_len = maximum source length, h = hidden size. 
+                                    
         @param enc_masks (Tensor): Tensor of sentence masks shape (b, src_len),
                                     where b = batch size, src_len is maximum source length. 
 
@@ -297,7 +327,21 @@ class NMT(nn.Module):
                                       your implementation.
         """
 
+        batch_size, src_len, hidden_size = enc_hiddens.size()
         combined_output = None
+
+        # h_t, c_t = Decoder(ybar_t , (h_(t-1), c_(t-1)))
+        dec_state = self.decoder(Ybar_t, dec_state)
+        dec_hidden, dec_cell = dec_state
+
+        # dec_hidden = (b, h)
+        # dec_cell = (b, h)
+        # e_t = (b, src_len)
+        # (b, src_len, 1) =  (b, src_len, h) @ (b, h, 1)
+        e_t = enc_hiddens_proj.bmm(dec_hidden.unsqueeze(2))
+        e_t = e_t.squeeze(2)
+            
+
 
         ### YOUR CODE HERE (~3 Lines)
         ### TODO:
@@ -331,6 +375,20 @@ class NMT(nn.Module):
 
         ### YOUR CODE HERE (~6 Lines)
         ### TODO:
+
+
+        # alphat_t = (b, src_len)
+        # enc_hiddens = (b, src_len, 2h)
+        # a_t = (b, 2h)
+        # U_t = (b, 3h)
+        # V_t = (b, h)
+        # O_t = (b, h)
+        alpha_t = F.softmax(e_t, dim=1)
+        a_t = alpha_t.unsqueeze(1).bmm(enc_hiddens).squeeze(1)
+        U_t = torch.cat((dec_hidden, a_t), dim=1)
+        V_t = self.combined_output_projection(U_t)
+        O_t = self.dropout(torch.tanh(V_t))
+
         ###     1. Apply softmax to e_t to yield alpha_t
         ###     2. Use batched matrix multiplication between alpha_t and enc_hiddens to obtain the
         ###         attention output vector, a_t.
